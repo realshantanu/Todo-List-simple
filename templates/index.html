@@ -1,0 +1,459 @@
+<!-- templates/index.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shared Todo List</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        h1 {
+            text-align: center;
+            color: #333;
+        }
+        
+        .todo-form {
+            display: flex;
+            margin-bottom: 20px;
+            gap: 10px;
+        }
+        
+        .todo-form input[type="text"] {
+            flex: 1;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        
+        .todo-form select {
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        
+        .todo-form button {
+            padding: 10px 15px;
+            background: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        
+        .todo-list {
+            list-style-type: none;
+            padding: 0;
+        }
+        
+        .todo-item {
+            background: #f9f9f9;
+            padding: 15px;
+            margin-bottom: 10px;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            transition: background-color 0.3s;
+            border-left: 5px solid #ddd;
+        }
+        
+        .todo-item:hover {
+            background-color: #f1f1f1;
+        }
+        
+        .todo-item.high {
+            border-left-color: #f44336;
+        }
+        
+        .todo-item.medium {
+            border-left-color: #ff9800;
+        }
+        
+        .todo-item.low {
+            border-left-color: #4CAF50;
+        }
+        
+        .todo-item.completed {
+            opacity: 0.6;
+        }
+        
+        .todo-item.completed .todo-text {
+            text-decoration: line-through;
+        }
+        
+        .todo-check {
+            margin-right: 10px;
+        }
+        
+        .todo-content {
+            flex: 1;
+            display: flex;
+            align-items: center;
+        }
+        
+        .todo-actions {
+            display: flex;
+            gap: 5px;
+        }
+        
+        .todo-actions button {
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-size: 16px;
+            padding: 5px;
+        }
+        
+        .delete-btn {
+            color: #f44336;
+        }
+        
+        .edit-btn {
+            color: #2196F3;
+        }
+        
+        .priority-badge {
+            font-size: 12px;
+            padding: 3px 8px;
+            border-radius: 10px;
+            margin-left: 10px;
+        }
+        
+        .priority-high {
+            background-color: #ffebee;
+            color: #d32f2f;
+        }
+        
+        .priority-medium {
+            background-color: #fff8e1;
+            color: #ff8f00;
+        }
+        
+        .priority-low {
+            background-color: #e8f5e9;
+            color: #2e7d32;
+        }
+        
+        .status-indicator {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            padding: 10px 15px;
+            background-color: #333;
+            color: white;
+            border-radius: 4px;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        
+        .status-indicator.show {
+            opacity: 1;
+        }
+    </style>
+</head>
+<body>
+    <h1>Shared Todo List</h1>
+    
+    <div class="todo-form">
+        <input type="text" id="taskInput" placeholder="Enter a new task...">
+        <select id="prioritySelect">
+            <option value="high">High Priority</option>
+            <option value="medium" selected>Medium Priority</option>
+            <option value="low">Low Priority</option>
+        </select>
+        <button id="addTodoBtn">Add Task</button>
+    </div>
+    
+    <ul id="todoList" class="todo-list"></ul>
+    
+    <div id="statusIndicator" class="status-indicator">Connected</div>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.5.1/socket.io.js"></script>
+    <script>
+        // Connect to Socket.IO server
+        const socket = io();
+        const statusIndicator = document.getElementById('statusIndicator');
+        
+        // Show connection status
+        socket.on('connect', () => {
+            showStatus('Connected');
+        });
+        
+        socket.on('disconnect', () => {
+            showStatus('Disconnected', true);
+        });
+        
+        function showStatus(message, isError = false) {
+            statusIndicator.textContent = message;
+            statusIndicator.style.backgroundColor = isError ? '#f44336' : '#4CAF50';
+            statusIndicator.classList.add('show');
+            
+            setTimeout(() => {
+                statusIndicator.classList.remove('show');
+            }, 3000);
+        }
+        
+        // Load todos on page load
+        document.addEventListener('DOMContentLoaded', () => {
+            loadTodos();
+            
+            // Add event listener for the add button
+            document.getElementById('addTodoBtn').addEventListener('click', addTodo);
+            
+            // Add event listener for the Enter key in the input field
+            document.getElementById('taskInput').addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    addTodo();
+                }
+            });
+        });
+        
+        function loadTodos() {
+            fetch('/todos')
+                .then(response => response.json())
+                .then(todos => {
+                    renderTodos(todos);
+                })
+                .catch(error => {
+                    console.error('Error loading todos:', error);
+                    showStatus('Error loading todos', true);
+                });
+        }
+        
+        function renderTodos(todos) {
+            const todoList = document.getElementById('todoList');
+            todoList.innerHTML = '';
+            
+            todos.forEach(todo => {
+                const todoItem = createTodoElement(todo);
+                todoList.appendChild(todoItem);
+            });
+        }
+        
+        function createTodoElement(todo) {
+            const todoItem = document.createElement('li');
+            todoItem.classList.add('todo-item', todo.priority);
+            if (todo.completed) {
+                todoItem.classList.add('completed');
+            }
+            todoItem.dataset.id = todo.id;
+            
+            todoItem.innerHTML = `
+                <div class="todo-content">
+                    <input type="checkbox" class="todo-check" ${todo.completed ? 'checked' : ''}>
+                    <span class="todo-text">${escapeHtml(todo.task)}</span>
+                    <span class="priority-badge priority-${todo.priority}">${todo.priority}</span>
+                </div>
+                <div class="todo-actions">
+                    <button class="edit-btn"><i class="fas fa-edit"></i></button>
+                    <button class="delete-btn"><i class="fas fa-trash"></i></button>
+                </div>
+            `;
+            
+            // Add event listeners
+            const checkbox = todoItem.querySelector('.todo-check');
+            checkbox.addEventListener('change', () => {
+                toggleTodoComplete(todo.id, checkbox.checked);
+            });
+            
+            const editBtn = todoItem.querySelector('.edit-btn');
+            editBtn.addEventListener('click', () => {
+                editTodo(todo);
+            });
+            
+            const deleteBtn = todoItem.querySelector('.delete-btn');
+            deleteBtn.addEventListener('click', () => {
+                deleteTodo(todo.id);
+            });
+            
+            return todoItem;
+        }
+        
+        function addTodo() {
+            const taskInput = document.getElementById('taskInput');
+            const prioritySelect = document.getElementById('prioritySelect');
+            
+            const task = taskInput.value.trim();
+            const priority = prioritySelect.value;
+            
+            if (task === '') {
+                showStatus('Task cannot be empty', true);
+                return;
+            }
+            
+            fetch('/todos', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ task, priority })
+            })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Failed to add todo');
+                    }
+                    taskInput.value = '';
+                    showStatus('Task added successfully');
+                })
+                .catch(error => {
+                    console.error('Error adding todo:', error);
+                    showStatus('Error adding task', true);
+                });
+        }
+        
+        function toggleTodoComplete(todoId, isCompleted) {
+            fetch(`/todos/${todoId}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ completed: isCompleted })
+            })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Failed to update todo');
+                    }
+                    showStatus(`Task marked as ${isCompleted ? 'completed' : 'incomplete'}`);
+                })
+                .catch(error => {
+                    console.error('Error updating todo:', error);
+                    showStatus('Error updating task', true);
+                });
+        }
+        
+        function editTodo(todo) {
+            const newTask = prompt('Edit task:', todo.task);
+            if (newTask === null || newTask.trim() === '') {
+                return;
+            }
+            
+            const newPriority = prompt('Edit priority (high, medium, low):', todo.priority);
+            if (newPriority === null || !['high', 'medium', 'low'].includes(newPriority)) {
+                return;
+            }
+            
+            fetch(`/todos/${todo.id}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ 
+                    task: newTask.trim(),
+                    priority: newPriority
+                })
+            })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Failed to update todo');
+                    }
+                    showStatus('Task updated successfully');
+                })
+                .catch(error => {
+                    console.error('Error updating todo:', error);
+                    showStatus('Error updating task', true);
+                });
+        }
+        
+        function deleteTodo(todoId) {
+            if (!confirm('Are you sure you want to delete this task?')) {
+                return;
+            }
+            
+            fetch(`/todos/${todoId}`, {
+                method: 'DELETE'
+            })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Failed to delete todo');
+                    }
+                    showStatus('Task deleted successfully');
+                })
+                .catch(error => {
+                    console.error('Error deleting todo:', error);
+                    showStatus('Error deleting task', true);
+                });
+        }
+        
+        // Listen for socket events
+        socket.on('todo_added', (todo) => {
+            const todoList = document.getElementById('todoList');
+            const todoItem = createTodoElement(todo);
+            
+            // Insert based on priority
+            let inserted = false;
+            const items = todoList.querySelectorAll('.todo-item');
+            
+            for (let i = 0; i < items.length; i++) {
+                const item = items[i];
+                const itemPriority = getPriorityValue(item.classList);
+                if (getPriorityValue([todo.priority]) > itemPriority) {
+                    todoList.insertBefore(todoItem, item);
+                    inserted = true;
+                    break;
+                }
+            }
+            
+            if (!inserted) {
+                todoList.appendChild(todoItem);
+            }
+            
+            showStatus('New task added by someone');
+        });
+        
+        socket.on('todo_updated', (todo) => {
+            const todoItem = document.querySelector(`.todo-item[data-id="${todo.id}"]`);
+            if (todoItem) {
+                const newTodoItem = createTodoElement(todo);
+                todoItem.parentNode.replaceChild(newTodoItem, todoItem);
+                
+                // Reorder the list based on priority
+                const todoList = document.getElementById('todoList');
+                const todos = Array.from(todoList.querySelectorAll('.todo-item'));
+                
+                todos.sort((a, b) => {
+                    const priorityA = getPriorityValue(a.classList);
+                    const priorityB = getPriorityValue(b.classList);
+                    return priorityB - priorityA;
+                });
+                
+                todoList.innerHTML = '';
+                todos.forEach(item => todoList.appendChild(item));
+                
+                showStatus('A task was updated');
+            }
+        });
+        
+        socket.on('todo_deleted', (data) => {
+            const todoItem = document.querySelector(`.todo-item[data-id="${data.id}"]`);
+            if (todoItem) {
+                todoItem.remove();
+                showStatus('A task was deleted');
+            }
+        });
+        
+        function getPriorityValue(classList) {
+            if (classList.contains('high')) return 3;
+            if (classList.contains('medium')) return 2;
+            if (classList.contains('low')) return 1;
+            return 0;
+        }
+        
+        function escapeHtml(unsafe) {
+            return unsafe
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+        }
+    </script>
+</body>
+</html>
